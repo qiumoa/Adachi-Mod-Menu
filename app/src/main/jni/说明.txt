@@ -1,0 +1,54 @@
+菜单有什么改动?
+提供两个版本:
+---用于Arm32 && Arm64.
+---用于Thumb.
+1.添加了il2cpp自动更新(hook与patch)。
+2.修改了findLibrary()函数，在自动更新存在时，也可以使用传统寻址功能。
+3.修复了thumb指令集下菜单hook时写入arm32指令的bug。
+4.提供了符号寻址函数。
+5.添加patch与hook双线程。
+6.不需要悬浮窗权限。
+7.提供菜单按钮显示异常解决办法。
+8.菜单部分文字信息位于Native，部分位于Java。Java层信息请你自行混淆保护。
+
+请你使用:
+PC:AndroidStudio
+手机:AndroidIDE(不是AIDE)!
+来构建菜单。
+如使用AIDE构建出现错误，请勿询问。
+
+
+如何注入?(不需要悬浮窗权限!!)
+添加菜单dex和so
+//*-----------
+在启动类的onWindowFocusChanged函数下添加
+invoke-static {p0}, Lcom/android/support/CkHomuraMain;->Start(Landroid/app/Activity;)V
+//*------------
+如果启动类下没有onWindowFocusChanged函数，请这样添加这个方法
+.method public onWindowFocusChanged(Z)V
+    .registers 2
+    .param p1, "hasFocus"  # Z
+
+    .line 26
+    invoke-static {p0}, Lcom/android/support/CkHomuraMain;->Start(Landroid/app/Activity;)V
+
+    .line 27
+    invoke-super {p0, p1}, Landroid/app/Activity;->onWindowFocusChanged(Z)V
+
+    .line 28
+    return-void
+.end method
+
+
+
+
+解决老游戏菜单按钮不正常显示。
+//*-------
+1..
+将AndroidManifest.xml里的android:theme=""改为android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+
+或2..将
+const v0, 0x103012a
+    invoke-virtual {p0, v0}, Lcom/android/support/MainActivity;->setTheme(I)V
+    
+    加到注入菜单那个类的oncreate()头

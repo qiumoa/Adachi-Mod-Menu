@@ -1,0 +1,40 @@
+name: Build Menu APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android components
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platforms;android-33" "build-tools;33.0.2" "ndk;19.2.5345600"
+
+      - name: Build menu APK
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:assembleRelease
+
+      - name: Upload menu artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: menu-apk-${{ github.sha }}
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
