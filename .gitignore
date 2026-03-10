@@ -14,5 +14,6 @@
 .cxx
 local.properties
 tools/apktool.jar
+tools/uber-apk-signer.jar
 local_injection/
 injection/

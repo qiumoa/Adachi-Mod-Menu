@@ -33,7 +33,7 @@ Java_com_android_support_CkHomuraMenu_GetFeatureList(JNIEnv *env, jobject) {
         OBFUSCATE("1_Toggle_Enable version update trace_True"),
         OBFUSCATE("2_Button_Clear trace log"),
         OBFUSCATE("3_Button_Write test log"),
-        OBFUSCATE("RichTextView_Log file: /data/data/com.lta.hsahc.aligames/files/hsahc_hook.log"),
+        OBFUSCATE("RichTextView_Log file: /sdcard/Download/hsahc_hook.log"),
         OBFUSCATE("RichTextView_Target library: libil2cpp.so"),
         OBFUSCATE("RichTextView_Current offsets are verified for arm64 build only"),
     };

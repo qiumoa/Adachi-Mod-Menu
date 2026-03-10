@@ -13,11 +13,46 @@
 #include "Includes/Utils.h"
 #include "Includes/Macros.h"
 
-static const char *kHsahcLogPath = "/data/data/com.lta.hsahc.aligames/files/hsahc_hook.log";
+static const char *kHsahcLogPath = "/sdcard/Download/hsahc_hook.log";
+static const char *kHsahcLogFallbackPath = "/data/data/com.lta.hsahc.aligames/files/hsahc_hook.log";
 static bool gHsahcTraceEnabled = true;
 static bool gHsahcHooksInstalled = false;
 static std::mutex gHsahcLogMutex;
 static uint64_t gHsahcSequence = 0;
+
+inline void AppendHsahcLogLine(const std::string &line) {
+    std::ofstream stream(kHsahcLogPath, std::ios::out | std::ios::app);
+    if (stream.is_open()) {
+        stream << line << std::endl;
+        return;
+    }
+
+    std::ofstream fallback(kHsahcLogFallbackPath, std::ios::out | std::ios::app);
+    if (fallback.is_open()) {
+        fallback << line << std::endl;
+        LOGW("%s", "[hsahc][log] failed to write to sdcard; wrote to internal app storage instead");
+        return;
+    }
+
+    LOGE("%s", "[hsahc][log] failed to open log file (sdcard + internal)");
+}
+
+inline void TruncateHsahcLog(const std::string &line) {
+    std::ofstream stream(kHsahcLogPath, std::ios::out | std::ios::trunc);
+    if (stream.is_open()) {
+        stream << line << std::endl;
+        return;
+    }
+
+    std::ofstream fallback(kHsahcLogFallbackPath, std::ios::out | std::ios::trunc);
+    if (fallback.is_open()) {
+        fallback << line << std::endl;
+        LOGW("%s", "[hsahc][log] failed to truncate sdcard log; truncated internal app storage instead");
+        return;
+    }
+
+    LOGE("%s", "[hsahc][log] failed to truncate log file (sdcard + internal)");
+}
 
 inline std::string Utf16ToUtf8(const Il2CppChar *chars, int length) {
     std::string output;
@@ -71,19 +106,12 @@ inline void AppendHsahcTrace(const char *stage, const char *type, const std::str
     line << "[hsahc][" << stage << "][" << type << "][seq=" << gHsahcSequence++ << "] " << message;
 
     LOGI("%s", line.str().c_str());
-
-    std::ofstream stream(kHsahcLogPath, std::ios::out | std::ios::app);
-    if (stream.is_open()) {
-        stream << line.str() << std::endl;
-    }
+    AppendHsahcLogLine(line.str());
 }
 
 inline void ClearHsahcLog() {
     std::lock_guard<std::mutex> lock(gHsahcLogMutex);
-    std::ofstream stream(kHsahcLogPath, std::ios::out | std::ios::trunc);
-    if (stream.is_open()) {
-        stream << "[hsahc][system][reset] log cleared" << std::endl;
-    }
+    TruncateHsahcLog("[hsahc][system][reset] log cleared");
     LOGI("%s", "[hsahc][system][reset] log cleared");
 }
 

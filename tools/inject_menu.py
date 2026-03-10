@@ -14,6 +14,7 @@ from pathlib import Path
 
 ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
 APKTOOL_URL = "https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar"
+UBER_APK_SIGNER_URL = "https://github.com/patrickfav/uber-apk-signer/releases/download/v1.3.0/uber-apk-signer-1.3.0.jar"
 MENU_CLASS = "Lcom/android/support/CkHomuraMain;"
 MENU_INVOKE = "    invoke-static {p0}, Lcom/android/support/CkHomuraMain;->Start(Landroid/app/Activity;)V"
 
@@ -29,6 +30,15 @@ def ensure_apktool(apktool_jar: Path) -> Path:
     apktool_jar.parent.mkdir(parents=True, exist_ok=True)
     urllib.request.urlretrieve(APKTOOL_URL, apktool_jar)
     return apktool_jar
+
+
+def ensure_uber_apk_signer(uber_signer_jar: Path) -> Path:
+    if uber_signer_jar.is_file():
+        return uber_signer_jar
+
+    uber_signer_jar.parent.mkdir(parents=True, exist_ok=True)
+    urllib.request.urlretrieve(UBER_APK_SIGNER_URL, uber_signer_jar)
+    return uber_signer_jar
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,6 +67,29 @@ def decode_apk(apktool_jar: Path, apk_path: Path, output_dir: Path) -> None:
 
 def build_apk(apktool_jar: Path, project_dir: Path, output_apk: Path) -> None:
     run(["java", "-jar", str(apktool_jar), "b", str(project_dir), "-o", str(output_apk)])
+
+
+def strip_apktool_incompatible_manifest_attrs(manifest_path: Path) -> list[str]:
+    if not manifest_path.is_file():
+        return []
+
+    text = manifest_path.read_text(encoding="utf-8")
+    original = text
+    removed: list[str] = []
+
+    for attribute in (
+        "android:compileSdkVersion",
+        "android:compileSdkVersionCodename",
+        "android:appComponentFactory",
+    ):
+        text, count = re.subn(rf"\s+{re.escape(attribute)}=\"[^\"]*\"", "", text)
+        if count:
+            removed.append(attribute)
+
+    if text != original:
+        manifest_path.write_text(text, encoding="utf-8", newline="\n")
+
+    return removed
 
 
 def resolve_component_name(package_name: str, component_name: str) -> str:
@@ -236,52 +269,81 @@ def build_tools_dir() -> Path:
 
 
 def sign_apk(unsigned_apk: Path, output_apk: Path) -> None:
-    tools_dir = build_tools_dir()
-    zipalign = tools_dir / ("zipalign.exe" if os.name == "nt" else "zipalign")
-    apksigner = tools_dir / ("apksigner.bat" if os.name == "nt" else "apksigner")
+    try:
+        tools_dir = build_tools_dir()
+    except RuntimeError:
+        tools_dir = None
 
-    if not zipalign.exists() or not apksigner.exists():
-        raise RuntimeError("zipalign/apksigner not found in Android build-tools")
+    if tools_dir is not None:
+        zipalign = tools_dir / ("zipalign.exe" if os.name == "nt" else "zipalign")
+        apksigner = tools_dir / ("apksigner.bat" if os.name == "nt" else "apksigner")
 
-    aligned_apk = unsigned_apk.with_name(f"{unsigned_apk.stem}-aligned.apk")
-    keystore = unsigned_apk.with_name("debug.keystore")
+        if not zipalign.exists() or not apksigner.exists():
+            raise RuntimeError("zipalign/apksigner not found in Android build-tools")
 
-    run([
-        "keytool",
-        "-genkeypair",
-        "-keystore",
-        str(keystore),
-        "-storepass",
-        "android",
-        "-keypass",
-        "android",
-        "-alias",
-        "androiddebugkey",
-        "-dname",
-        "CN=Android Debug,O=Android,C=US",
-        "-keyalg",
-        "RSA",
-        "-keysize",
-        "2048",
-        "-validity",
-        "10000",
-    ])
+        aligned_apk = unsigned_apk.with_name(f"{unsigned_apk.stem}-aligned.apk")
+        keystore = unsigned_apk.with_name("debug.keystore")
 
-    run([str(zipalign), "-f", "4", str(unsigned_apk), str(aligned_apk)])
-    run([
-        str(apksigner),
-        "sign",
-        "--ks",
-        str(keystore),
-        "--ks-pass",
-        "pass:android",
-        "--key-pass",
-        "pass:android",
-        "--out",
-        str(output_apk),
-        str(aligned_apk),
-    ])
-    run([str(apksigner), "verify", str(output_apk)])
+        run([
+            "keytool",
+            "-genkeypair",
+            "-keystore",
+            str(keystore),
+            "-storepass",
+            "android",
+            "-keypass",
+            "android",
+            "-alias",
+            "androiddebugkey",
+            "-dname",
+            "CN=Android Debug,O=Android,C=US",
+            "-keyalg",
+            "RSA",
+            "-keysize",
+            "2048",
+            "-validity",
+            "10000",
+        ])
+
+        run([str(zipalign), "-f", "4", str(unsigned_apk), str(aligned_apk)])
+        run([
+            str(apksigner),
+            "sign",
+            "--ks",
+            str(keystore),
+            "--ks-pass",
+            "pass:android",
+            "--key-pass",
+            "pass:android",
+            "--out",
+            str(output_apk),
+            str(aligned_apk),
+        ])
+        run([str(apksigner), "verify", str(output_apk)])
+        return
+
+    uber_signer_jar = ensure_uber_apk_signer(Path(__file__).resolve().parent / "uber-apk-signer.jar")
+    print("I: ANDROID_SDK_ROOT/ANDROID_HOME not set; using uber-apk-signer for zipalign/signing")
+
+    with tempfile.TemporaryDirectory(prefix="adachi-ubersigner-") as temp_dir:
+        out_dir = Path(temp_dir) / "out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        run([
+            "java",
+            "-jar",
+            str(uber_signer_jar),
+            "--apks",
+            str(unsigned_apk),
+            "--out",
+            str(out_dir),
+        ])
+
+        candidates = sorted(out_dir.glob("*.apk"), key=lambda path: path.stat().st_mtime, reverse=True)
+        if not candidates:
+            raise RuntimeError("uber-apk-signer did not produce any APK output")
+
+        shutil.copy2(candidates[0], output_apk)
 
 
 def remove_existing_menu(decoded_dir: Path) -> None:
@@ -439,9 +501,17 @@ def finalize_command(args: argparse.Namespace) -> int:
         raise FileNotFoundError(f"workspace not found: {workspace}")
 
     meta = load_meta(workspace)
-    decoded_dir = Path(meta["decoded_dir"])
+    decoded_dir = Path(meta.get("decoded_dir", ""))
     if not decoded_dir.is_dir():
-        raise FileNotFoundError(f"decoded directory not found: {decoded_dir}")
+        fallback_decoded = workspace / "decoded"
+        if fallback_decoded.is_dir():
+            decoded_dir = fallback_decoded
+        else:
+            raise FileNotFoundError(f"decoded directory not found: {decoded_dir}")
+
+    removed_attrs = strip_apktool_incompatible_manifest_attrs(decoded_dir / "AndroidManifest.xml")
+    if removed_attrs:
+        print(f"I: Stripped manifest attributes for apktool compatibility: {', '.join(removed_attrs)}")
 
     apply_menu_payload(workspace, args.menu_apk, apktool_jar)
 
